@@ -55,6 +55,7 @@ class PredictorDeployment:
 
         self.use_deepspeed = infer_conf.deepspeed
         self.use_vllm = infer_conf.vllm.enabled
+        self.is_mllm = True if infer_conf.name in ['fuyu-8b'] else False
 
         if self.use_deepspeed:
             from deepspeed_predictor import DeepSpeedPredictor
@@ -65,6 +66,9 @@ class PredictorDeployment:
             from vllm_predictor import VllmPredictor
 
             self.predictor = VllmPredictor(infer_conf)
+        elif self.is_mllm:
+            from mllm_predictor import MllmPredictor
+            self.predictor = MllmPredictor(infer_conf)
         else:
             from transformer_predictor import TransformerPredictor
 
@@ -88,13 +92,16 @@ class PredictorDeployment:
                 await asyncio.sleep(0.001)
 
     async def __call__(self, http_request: Request) -> Union[StreamingResponse, JSONResponse, str]:
+        print("enter __call__")
         json_request: Dict[str, Any] = await http_request.json()
+        print(f"{json_request.keys()}")
         prompts = []
         text = json_request["text"]
         config = json_request["config"] if "config" in json_request else {}
         streaming_response = json_request["stream"]
         if isinstance(text, list):
             is_chat, is_prompts = get_input_format(text)
+            print(f"is_chat: {is_chat}; is_prompt: {is_prompts}")
             if is_chat:
                 if self.process_tool is not None:
                     prompt = self.process_tool.get_prompt(text)
@@ -134,7 +141,7 @@ class PredictorDeployment:
                 self.predictor.stream_results(results_generator),
                 status_code=200,
                 media_type="text/plain",
-            )
+            )        
         else:
             streamer = self.predictor.get_streamer()
             self.loop.run_in_executor(
@@ -146,26 +153,42 @@ class PredictorDeployment:
             )
 
     async def stream_response(self, prompt, config):
+        print("enter stream_response")
         prompts = []
-        if isinstance(prompt, list):
+        images = []
+        if self.is_mllm:
             if self.process_tool is not None:
-                prompt = self.process_tool.get_prompt(prompt)
+                prompt, image = self.process_tool.get_prompt(prompt)
                 prompts.append(prompt)
+                images.extend(image)
             else:
-                prompts.extend(prompt)
-        else:
-            prompts.append(prompt)
-
-        if self.use_deepspeed:
-            self.predictor.streaming_generate(prompts, self.streamer, **config)
-            response_handle = self.consume_streamer()
-        else:
+                raise ValueError("process tool is not initiated for MLLM predictor")
             streamer = self.predictor.get_streamer()
             self.loop.run_in_executor(
                 None,
-                functools.partial(self.predictor.streaming_generate, prompts, streamer, **config),
+                functools.partial(self.predictor.streaming_generate, images, prompts, streamer, **config),
             )
             response_handle = self.consume_streamer_async(streamer)
+        else:
+            if isinstance(prompt, list):
+                if self.process_tool is not None:
+                    prompt = self.process_tool.get_prompt(prompt)
+                    prompts.append(prompt)
+                else:
+                    prompts.extend(prompt)
+            else:
+                prompts.append(prompt)
+
+            if self.use_deepspeed:
+                self.predictor.streaming_generate(prompts, self.streamer, **config)
+                response_handle = self.consume_streamer()
+            else:
+                streamer = self.predictor.get_streamer()
+                self.loop.run_in_executor(
+                    None,
+                    functools.partial(self.predictor.streaming_generate, prompts, streamer, **config),
+                )
+                response_handle = self.consume_streamer_async(streamer)
         async for output in response_handle:
             model_response = ModelResponse(
                 generated_text=output,

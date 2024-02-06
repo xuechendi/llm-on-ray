@@ -27,7 +27,8 @@ parser.add_argument(
     type=str,
     help="Deployed model endpoint url",
 )
-parser.add_argument("--model_name", default="gpt2", type=str, help="The name of model to request")
+parser.add_argument("--model_name", default="fuyu-8b", type=str, help="The name of model to request")
+
 parser.add_argument(
     "--streaming_response",
     default=False,
