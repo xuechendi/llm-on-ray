@@ -68,7 +68,7 @@ bigdl-cpu = [
 ]
 
 ui = [
-    "gradio==4.11.0",
+    "gradio==3.36.1",
     "paramiko==3.4.0",
 ]
 

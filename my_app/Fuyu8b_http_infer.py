@@ -27,7 +27,7 @@ parser = argparse.ArgumentParser(
 )
 parser.add_argument(
     "--request_api_base",
-    default="http://localhost:8000/v1",
+    default="http://localhost:8000/v1/chat/completions",
     type=str,
     help="Deployed model endpoint url",
 )
@@ -81,7 +81,7 @@ else:
     image = img_path
 sess = requests.Session()
 
-invoke_url = f"{args.request_api_base}/chat/completions"
+invoke_url = f"{args.request_api_base}"
 
 headers = {
   "Content-Type": "application/json",

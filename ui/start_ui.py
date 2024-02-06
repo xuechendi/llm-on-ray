@@ -68,7 +68,7 @@ if not os.environ['RECDP_CACHE_HOME']:
 
 from inference.inference_config import all_models, ModelDescription, Prompt
 from inference.inference_config import InferenceConfig as FinetunedConfig
-from inference.chat_process import ChatModelGptJ, ChatModelLLama  # noqa: F401
+from inference.chat_process import ChatModelGptJ, ChatModelLLama, ChatModelFuyu  # noqa: F401
 from inference.predictor_deployment import PredictorDeployment
 from ray import serve
 import ray
@@ -705,6 +705,8 @@ class ChatBotUI:
         # transformers 4.35 is needed for neural-chat-7b-v3-1, will be fixed later
         if "neural-chat" in model_name:
             pip_env = "transformers==4.35.0"
+        elif "fuyu-8b" in model_name:
+            pip_env = "transformers==4.37.2"
         else:
             pip_env = "transformers==4.31.0"
         deployment = PredictorDeployment.options(  # type: ignore

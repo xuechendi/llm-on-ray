@@ -83,5 +83,6 @@ def openai_serve_run(deployments, host, route_prefix, port):
         use_new_handle_api=True,
     )
     deployment_address = f"http://{host}:{port}{route_prefix}"
+    print(f"openai_serve_run host is {host}")
     print(f"Deployment is ready at `{deployment_address}`.")
     return deployment_address

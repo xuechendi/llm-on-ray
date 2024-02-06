@@ -22,6 +22,7 @@ def serve_run(deployments, model_list):
     for model_id, infer_conf in model_list.items():
         print("deploy model: ", model_id)
         deployment = deployments[model_id]
+        print(f"serve_run host is {infer_conf.host}")
         serve.run(
             deployment,
             _blocking=True,
