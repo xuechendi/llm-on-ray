@@ -60,7 +60,7 @@ def check_availability_and_install(package_or_list, verbose=1):
         actual_func(package_or_list)
     else:
         raise ValueError(f"{package_or_list} with type of {type(package_or_list)} is not supported.")
-    
+
 check_availability_and_install(['gradio==3.36.1', 'gradio_client==0.7.3', 'langchain==0.1.4', 'langchain-community==0.0.16', 'lz4', 'sentence-transformers==2.2.2', 'pyrecdp'])
 
 if not os.environ['RECDP_CACHE_HOME']:
@@ -117,6 +117,21 @@ class CustomStopper(Stopper):
     def stop(self, flag):
         self.should_stop = flag
 
+def convert_openai_output(chunk):
+    print(chunk)
+    try:
+        ret = chunk["choices"][0]["delta"]["content"]
+    except:
+        ret = ""
+    return ret
+
+def is_simple_api(request_url, model_name):
+    if model_name is None:
+        return True
+    import re
+    api_str = re.sub(r"^https?:\/\/.*[\r\n]*", "", request_url)
+    print(api_str)
+    return api_str == model_name
 
 @ray.remote
 class Progress_Actor:
@@ -207,9 +222,26 @@ class ChatBotUI:
         self._init_ui()
 
     @staticmethod
-    def history_to_messages(history):
+    def history_to_messages(history, image = None):
         messages = []
         for human_text, bot_text in history:
+            if image is not None:
+                import base64
+                from io import BytesIO
+
+                buffered = BytesIO()
+                image.save(buffered, format="JPEG")
+                base64_image = base64.b64encode(buffered.getvalue()).decode('utf-8')
+
+                human_text = [
+                    {'type': "text", "text": human_text},
+                    {
+                        'type': "image_url",
+                        "image_url": {
+                            "url": f"data:image/png;base64,{base64_image}"
+                        },
+                    },
+                ]
             messages.append(
                 {
                     "role": "user",
@@ -246,17 +278,38 @@ class ChatBotUI:
     def user(self, user_message, history):
         return "", history + [[user_message, None]]
 
-    def model_generate(self, prompt, request_url, config):
-        print("prompt: ", prompt)
-
-        sample_input = {"text": prompt, "config": config, "stream": True}
+    def model_generate(self, prompt, request_url, model_name, config):
+        simple_api = True if is_simple_api(request_url, model_name) else False
+        if simple_api:
+            prompt = self.process_tool.get_prompt(prompt)
+            print("prompt: ", prompt)
+            sample_input = {"text": prompt, "config": config, "stream": True}
+        else:
+            sample_input = {
+                "model": model_name,
+                "messages": prompt,
+                "stream": True,
+                "max_tokens": config["max_new_tokens"],
+                "temperature": config["temperature"],
+                "top_p": config["top_p"],
+                "top_k": config["top_k"]
+            }
         proxies = {"http": None, "https": None}
         outputs = requests.post(request_url, proxies=proxies, json=sample_input, stream=True)
         outputs.raise_for_status()
         for output in outputs.iter_content(chunk_size=None, decode_unicode=True):
             # remove context
-            if prompt in output:
+            if simple_api and prompt in output:
                 output = output[len(prompt) :]
+            else:
+                import json
+                import re
+                try:
+                    output = re.sub("^data: ", "", output)
+                    output = json.loads(output)
+                    print(f"After load as json: {output}")
+                except:
+                    output = ""
             yield output
 
     def bot(
@@ -267,10 +320,11 @@ class ChatBotUI:
         Temperature,
         Top_p,
         Top_k,
+        image=None,
+        model_name=None,
         enhance_knowledge=None,
     ):
-        prompt = self.history_to_messages(history)
-        prompt = self.process_tool.get_prompt(prompt)
+        prompt = self.history_to_messages(history, image)
         if enhance_knowledge:
             prompt = self.add_knowledge(prompt, enhance_knowledge)
         request_url = model_endpoint
@@ -282,17 +336,23 @@ class ChatBotUI:
             "do_sample": True,
             "top_p": Top_p,
             "top_k": Top_k,
+            "model": model_name
         }
-        outputs = self.model_generate(prompt=prompt, request_url=request_url, config=config)
+        print(config)
+        outputs = self.model_generate(prompt=prompt, request_url=request_url, model_name=model_name, config=config)
 
+        history[-1][1] = ""
         for output in outputs:
             if len(output) != 0:
                 time_end = time.time()
-                if history[-1][1] is None:
-                    history[-1][1] = output
+                if isinstance(output, str):
+                    if history[-1][1] is None:
+                        history[-1][1] = output
+                    else:
+                        history[-1][1] += output
+                    history[-1][1] = self.process_tool.convert_output(history[-1][1])
                 else:
-                    history[-1][1] += output
-                history[-1][1] = self.process_tool.convert_output(history[-1][1])
+                    history[-1][1] += convert_openai_output(output)
                 time_spend = round(time_end - time_start, 3)
                 token_num += 1
                 new_token_latency = f"""
@@ -312,6 +372,9 @@ class ChatBotUI:
         Temperature,
         Top_p,
         Top_k,
+        image=None,
+        model_name=None,
+        enhance_knowledge=None,
     ):
         prompt = self.history_to_messages(history)
         prompt = self.process_tool.get_prompt(prompt)
@@ -323,8 +386,9 @@ class ChatBotUI:
             "do_sample": True,
             "top_p": Top_p,
             "top_k": Top_k,
+            "model": model_name
         }
-        outputs = self.model_generate(prompt=prompt, request_url=request_url, config=config)
+        outputs = self.model_generate(prompt=prompt, request_url=request_url, model_name=model_name, config=config)
 
         for output in outputs:
             if len(output) != 0:
@@ -349,6 +413,8 @@ class ChatBotUI:
         rag_selector,
         rag_path,
         returned_k,
+        image = None,
+        model_name = None,
     ):
         enhance_knowledge = None
         if os.path.isabs(rag_path):
@@ -375,7 +441,9 @@ class ChatBotUI:
             Temperature,
             Top_p,
             Top_k,
-            enhance_knowledge,
+            image = image,
+            model_name = model_name,
+            enhance_knowledge = enhance_knowledge,
         )
         for output in bot_generator:
             yield output
@@ -1077,7 +1145,6 @@ class ChatBotUI:
                         label="Top k",
                         info="The number of highest probability vocabulary tokens to keep for top-k-filtering.",
                     )
-
                 with gr.Tab("Dialogue"):
                     chatbot = gr.Chatbot(
                         elem_id="chatbot",
@@ -1087,6 +1154,20 @@ class ChatBotUI:
 
                     with gr.Row():
                         with gr.Column(scale=0.8):
+                            with gr.Accordion("image", open=False, visible=True):
+                                image = gr.Image(type="pil")
+                            endpoint_value = "http://127.0.0.1:8000/v1/chat/completions"
+                            with gr.Row():
+                                model_endpoint = gr.Text(
+                                    label="Model Endpoint",
+                                    value=endpoint_value,
+                                    scale = 1
+                                )
+                                model_name = gr.Text(
+                                    label="Model Name",
+                                    value="fuyu-8b",
+                                    scale = 1
+                                )
                             msg = gr.Textbox(
                                 show_label=False,
                                 container=False,
@@ -1282,6 +1363,20 @@ class ChatBotUI:
 
                     with gr.Row():
                         with gr.Column(scale=0.8):
+                            with gr.Accordion("image", open=False, visible=True):
+                                rag_image = gr.Image(type="pil")
+                            endpoint_value = "http://127.0.0.1:8000/v1/chat/completions"
+                            with gr.Row():
+                                rag_deployed_model_endpoint = gr.Textbox(
+                                    label="Model Endpoint",
+                                    value=endpoint_value,
+                                    scale = 1
+                                )
+                                rag_model_name = gr.Textbox(
+                                    label="Model Name",
+                                    value="fuyu-8b",
+                                    scale = 1
+                                )
                             msg_rag = gr.Textbox(
                                 show_label=False,
                                 container=False,
@@ -1416,11 +1511,13 @@ class ChatBotUI:
                 self.bot,
                 [
                     chatbot,
-                    deployed_model_endpoint,
+                    model_endpoint,
                     max_new_tokens,
                     Temperature,
                     Top_p,
                     Top_k,
+                    image,
+                    model_name,
                 ],
                 [chatbot, latency_status],
             )
@@ -1430,11 +1527,13 @@ class ChatBotUI:
                 self.bot,
                 [
                     chatbot,
-                    deployed_model_endpoint,
+                    model_endpoint,
                     max_new_tokens,
                     Temperature,
                     Top_p,
                     Top_k,
+                    image,
+                    model_name,
                 ],
                 [chatbot, latency_status],
             )
@@ -1469,7 +1568,7 @@ class ChatBotUI:
                 self.bot_rag,
                 [
                     chatbot_rag,
-                    deployed_model_endpoint,
+                    rag_deployed_model_endpoint,
                     max_new_tokens_rag,
                     Temperature_rag,
                     Top_p_rag,
@@ -1477,6 +1576,8 @@ class ChatBotUI:
                     rag_selector,
                     rag_path,
                     returned_k,
+                    rag_image,
+                    rag_model_name,
                 ],
                 [chatbot_rag, latency_status_rag],
             )
@@ -1486,7 +1587,7 @@ class ChatBotUI:
                 self.bot_rag,
                 [
                     chatbot_rag,
-                    deployed_model_endpoint,
+                    rag_deployed_model_endpoint,
                     max_new_tokens_rag,
                     Temperature_rag,
                     Top_p_rag,
@@ -1494,6 +1595,8 @@ class ChatBotUI:
                     rag_selector,
                     rag_path,
                     returned_k,
+                    rag_image,
+                    rag_model_name,
                 ],
                 [chatbot_rag, latency_status_rag],
             )

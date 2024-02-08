@@ -9,5 +9,6 @@ node_ip=$(ip addr show ${ethinf} | grep 'inet ' | awk '{print $2}' | cut -d'/' -
 export no_proxy="$node_ip, localhost, $no_proxy"
 
 
+echo RAY_SERVE_ENABLE_EXPERIMENTAL_STREAMING=1 ray start --head --node-ip-address $node_ip --dashboard-host 0.0.0.0 --resources='{"queue_hardware": 5}'
 RAY_SERVE_ENABLE_EXPERIMENTAL_STREAMING=1 ray start --head --node-ip-address $node_ip --dashboard-host 0.0.0.0 --resources='{"queue_hardware": 5}'
 
