@@ -77,8 +77,8 @@ else:
     openai_base_url = "https://api.openai.com/v1"
 
 llm = ChatOpenAI(
-    openai_api_base="http://localhost:8000/v1",
-    model_name=openai_base_url,
+    openai_api_base=openai_base_url,
+    model_name=args.model_name,
     openai_api_key=openai_api_key,
     streaming=args.streaming_response,
     max_tokens=args.max_tokens,
