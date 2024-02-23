@@ -226,7 +226,6 @@ async def _chat_completions_wrapper(
             ).json() + "\n\n"
         yield "data: [DONE]\n\n"
 
-
 class Router:
     def __init__(
         self,

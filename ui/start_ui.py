@@ -53,6 +53,12 @@ from pyrecdp.core.cache_utils import RECDP_MODELS_CACHE
 if ("RECDP_CACHE_HOME" not in os.environ) or (not os.environ["RECDP_CACHE_HOME"]):
     os.environ["RECDP_CACHE_HOME"] = os.getcwd()
 
+import logging
+
+lib_list = ["httpcore", "httpx", "paramiko", "urllib3", "markdown_it", "matplotlib"]
+for lib in lib_list:
+    logging.getLogger(lib).setLevel(logging.ERROR)
+
 
 class CustomStopper(Stopper):
     def __init__(self):
@@ -779,7 +785,11 @@ class ChatBotUI:
         serve.shutdown()
 
     def get_ray_cluster(self):
-        command = "conda activate " + self.conda_env_name + "; ray status"
+        command = (
+            "source ~/anaconda3/bin/activate; conda activate "
+            + self.conda_env_name
+            + "; ray status"
+        )
         stdin, stdout, stderr = self.ssh_connect[-1].exec_command(command)
         out = stdout.read().decode("utf-8")
         # print(f"out is {out}")
