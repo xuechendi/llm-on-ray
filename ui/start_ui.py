@@ -53,6 +53,12 @@ from pyrecdp.core.cache_utils import RECDP_MODELS_CACHE
 if ("RECDP_CACHE_HOME" not in os.environ) or (not os.environ["RECDP_CACHE_HOME"]):
     os.environ["RECDP_CACHE_HOME"] = os.getcwd()
 
+import logging
+
+lib_list = ["httpcore", "httpx", "paramiko", "urllib3", "markdown_it", "matplotlib"]
+for lib in lib_list:
+    logging.getLogger(lib).setLevel(logging.ERROR)
+
 
 class CustomStopper(Stopper):
     def __init__(self):
@@ -778,7 +784,7 @@ class ChatBotUI:
 
     def get_ray_cluster(self):
         command = (
-            "source ~/miniconda3/bin/activate; conda activate "
+            "source ~/anaconda3/bin/activate; conda activate "
             + self.conda_env_name
             + "; ray status"
         )
@@ -1382,6 +1388,11 @@ class ChatBotUI:
                             send_btn_rag = gr.Button("Send")
                         with gr.Column(scale=0.5, min_width=0):
                             clear_btn_rag = gr.Button("Clear")
+
+            with gr.Tab("Ref Apps"):
+                gr.HTML(
+                    f"<iframe src='http://{self.head_node_ip}:8501' width='1400' height='800'></iframe>"
+                )
 
             with gr.Accordion("Cluster Status", open=False, visible=True):
                 with gr.Row():
