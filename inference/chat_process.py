@@ -64,6 +64,7 @@ class ChatModel:
 
     def get_prompt(self, messages):
         """Generate response based on messages."""
+        print(messages)
         prompt = self.prepare_prompt(messages)
         return prompt
 
