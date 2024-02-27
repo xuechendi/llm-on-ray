@@ -18,8 +18,7 @@ import argparse
 import os
 
 from langchain_openai import ChatOpenAI
-from langchain.tools import DuckDuckGoSearchRun
-from langchain.callbacks import StreamingStdOutCallbackHandler
+from langchain.callbacks import StreamingStdOutCallbackHandler, StdOutCallbackHandler
 from langchain.agents import AgentExecutor, create_openai_tools_agent
 from langchain import hub
 
@@ -65,18 +64,65 @@ elif openai_api_key == "not_needed":
 else:
     openai_base_url = "https://api.openai.com/v1"
 
-# =================================================#
+# ================================================ #
+# Lets define a function/tool for getting the weather. In this demo it we mockthe output
+# In real life, you'd end up calling a library/API such as PWOWM (open weather map) library:
+# Depending on your app's functionality, you may also, call vendor/external or internal custom APIs
 
-tools = [DuckDuckGoSearchRun(max_results=1)]
+from pydantic import BaseModel, Field
+from typing import Optional, Type
+from langchain.tools import BaseTool
+
+
+def get_current_weather(location, unit):
+    # Call an external API to get relevant information (like serpapi, etc)
+    # Here for the demo we will send a mock response
+    weather_info = {
+        "location": location,
+        "temperature": "78",
+        "unit": unit,
+        "forecast": ["sunny", "with a chance of meatballs"],
+    }
+    return weather_info
+
+
+class GetCurrentWeatherCheckInput(BaseModel):
+    # Check the input for Weather
+    location: str = Field(
+        ..., description="The name of the location name for which we need to find the weather"
+    )
+    unit: str = Field(..., description="The unit for the temperature value")
+
+
+class GetCurrentWeatherTool(BaseTool):
+    name = "get_current_weather"
+    description = "Used to find the weather for a given location in said unit"
+
+    def _run(self, location: str, unit: str):
+        # print("I am running!")
+        weather_response = get_current_weather(location, unit)
+        return weather_response
+
+    def _arun(self, location: str, unit: str):
+        raise NotImplementedError("This tool does not support async")
+
+    args_schema: Optional[Type[BaseModel]] = GetCurrentWeatherCheckInput
+
+
+# ================================================ #
+
+tools = [GetCurrentWeatherTool()]
 prompt = hub.pull(args.prompt_template)
 llm = ChatOpenAI(
     openai_api_base=openai_base_url,
     model_name=args.model_name,
     openai_api_key=openai_api_key,
     max_tokens=args.max_tokens,
-    callbacks=[StreamingStdOutCallbackHandler()],
-    streaming=True,
+    callbacks=[
+        StreamingStdOutCallbackHandler() if args.streaming_response else StdOutCallbackHandler()
+    ],
+    streaming=args.streaming_response,
 )
 agent = create_openai_tools_agent(tools=tools, llm=llm, prompt=prompt)
 agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
-agent_executor.invoke({"input": "what is the date today?"})
+agent_executor.invoke({"input": "what is the weather today in Austin?"})

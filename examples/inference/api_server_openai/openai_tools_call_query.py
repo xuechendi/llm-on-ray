@@ -21,7 +21,12 @@ import os
 parser = argparse.ArgumentParser(
     description="Example script to query with openai sdk", add_help=True
 )
-parser.add_argument("--model_name", default="gpt2", type=str, help="The name of model to request")
+parser.add_argument(
+    "--model_name",
+    default="mistral-7b-instruct-v0.2",
+    type=str,
+    help="The name of model to request",
+)
 parser.add_argument(
     "--streaming_response",
     default=False,
@@ -29,17 +34,8 @@ parser.add_argument(
     help="Whether to enable streaming response",
 )
 parser.add_argument(
-    "--max_new_tokens", default=128, help="The maximum numbers of tokens to generate"
+    "--max_new_tokens", default=512, help="The maximum numbers of tokens to generate"
 )
-parser.add_argument(
-    "--temperature", default=None, help="The value used to modulate the next token probabilities"
-)
-parser.add_argument(
-    "--top_p",
-    default=None,
-    help="If set to float < 1, only the smallest set of most probable tokens with probabilities that add up to`Top p` or higher are kept for generation",
-)
-
 args = parser.parse_args()
 
 if "OPENAI_API_KEY" in os.environ:
@@ -54,7 +50,52 @@ elif openai_api_key == "not_needed":
 else:
     openai_base_url = "https://api.openai.com/v1"
 
-# ================================================================ #
+# ================================================ #
+# Lets define a function/tool for getting the weather. In this demo it we mockthe output
+# In real life, you'd end up calling a library/API such as PWOWM (open weather map) library:
+# Depending on your app's functionality, you may also, call vendor/external or internal custom APIs
+
+from pydantic import BaseModel, Field
+from typing import Optional, Type
+from langchain.tools import BaseTool
+
+
+def get_current_weather(location, unit):
+    # Call an external API to get relevant information (like serpapi, etc)
+    # Here for the demo we will send a mock response
+    weather_info = {
+        "location": location,
+        "temperature": "78",
+        "unit": unit,
+        "forecast": ["sunny", "with a chance of meatballs"],
+    }
+    return weather_info
+
+
+class GetCurrentWeatherCheckInput(BaseModel):
+    # Check the input for Weather
+    location: str = Field(
+        ..., description="The name of the location name for which we need to find the weather"
+    )
+    unit: str = Field(..., description="The unit for the temperature value")
+
+
+class GetCurrentWeatherTool(BaseTool):
+    name = "get_current_weather"
+    description = "Used to find the weather for a given location in said unit"
+
+    def _run(self, location: str, unit: str):
+        # print("I am running!")
+        weather_response = get_current_weather(location, unit)
+        return weather_response
+
+    def _arun(self, location: str, unit: str):
+        raise NotImplementedError("This tool does not support async")
+
+    args_schema: Optional[Type[BaseModel]] = GetCurrentWeatherCheckInput
+
+
+# ================================================ #
 
 client = OpenAI(base_url=openai_base_url, api_key=openai_api_key)
 
@@ -78,11 +119,15 @@ tools = [
         },
     }
 ]
-messages = [{"role": "user", "content": "What's the weather like in Boston today?"}]
+messages = [
+    {"role": "system", "content": "You are a helpful assistant"},
+    {"role": "user", "content": "What's the weather like in Boston today?"},
+]
 
 completion = client.chat.completions.create(
     model=args.model_name,
     messages=messages,
+    max_tokens=args.max_new_tokens,
     tools=tools,
     tool_choice="auto",
     stream=args.streaming_response,
