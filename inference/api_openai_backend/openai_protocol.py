@@ -122,7 +122,7 @@ class ToolCall(BaseModel):
 
 class ChatMessage(BaseModel):
     role: Literal["system", "assistant", "user", "tool"]
-    content: Union[str, list]
+    content: Optional[Union[str, list]] = None
     tool_calls: Optional[List[ToolCall]] = None
     tool_call_id: Optional[str] = None
 

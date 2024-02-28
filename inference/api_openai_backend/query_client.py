@@ -63,7 +63,13 @@ class RouterQueryClient:
             request_id=request_id,
             async_iterator=deploy_handle.options(stream=True)
             .openai_call.options(stream=True, use_new_handle_api=True)
-            .remote(prompt_content, gen_config, streaming_response=streaming_reponse),
+            .remote(
+                prompt_content,
+                gen_config,
+                streaming_response=streaming_reponse,
+                tools=prompt.tools,
+                tool_choice=prompt.tool_choice,
+            ),
         ):
             yield x
 

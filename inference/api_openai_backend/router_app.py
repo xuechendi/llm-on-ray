@@ -365,13 +365,12 @@ class Router:
                             status_code=results.error.code,
                             type=results.error.type,
                         )
-                    results = results.dict()
 
-                    if results.tool_calls:
-                        msg = ChatMessage(role="assistant", tool_calls=results["tool_calls"])
+                    if results.tool_calls is not None:
+                        msg = ChatMessage(role="assistant", tool_calls=results.tool_calls)
                         # deleting this fields so that they don't appear in the response
                         del msg.tool_call_id
-                        usage = UsageInfo.from_response(results)
+                        usage = UsageInfo.from_response(results.dict())
 
                         return ChatCompletionResponse(
                             id=request_id,
@@ -379,13 +378,13 @@ class Router:
                             model=body.model,
                             choices=[
                                 ChatCompletionResponseChoice(
-                                    message=msg, index=0, finish_reason=results["finish_reason"]
+                                    message=msg, index=0, finish_reason=results.finish_reason
                                 )
                             ],
                             usage=usage,
                         )
                     else:
-                        usage = UsageInfo.from_response(results)
+                        usage = UsageInfo.from_response(results.dict())
 
                         return ChatCompletionResponse(
                             id=request_id,
@@ -395,9 +394,9 @@ class Router:
                                 ChatCompletionResponseChoice(
                                     index=0,
                                     message=ChatMessage(
-                                        role="assistant", content=results["generated_text"] or ""
+                                        role="assistant", content=results.generated_text or ""
                                     ),
-                                    finish_reason=results["finish_reason"],
+                                    finish_reason=results.finish_reason,
                                 )
                             ],
                             usage=usage,

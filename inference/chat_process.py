@@ -64,7 +64,6 @@ class ChatModel:
 
     def get_prompt(self, messages):
         """Generate response based on messages."""
-        print(messages)
         prompt = self.prepare_prompt(messages)
         return prompt
 
@@ -170,7 +169,6 @@ class ChatModelwithImage(ChatModel):
                 prompt += f"### Unknown:\n{content}\n"
         if self.bot_id != "":
             prompt += f"{self.bot_id}:\n"
-        print(f"prompt is {prompt}")
         return prompt, images
 
 
