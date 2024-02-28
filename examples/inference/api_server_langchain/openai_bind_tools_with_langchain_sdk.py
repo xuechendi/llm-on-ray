@@ -19,7 +19,6 @@ import os
 
 from langchain.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
-from langchain.tools import DuckDuckGoSearchRun
 from langchain.callbacks import StreamingStdOutCallbackHandler, StdOutCallbackHandler
 
 parser = argparse.ArgumentParser(
@@ -106,7 +105,7 @@ class GetCurrentWeatherTool(BaseTool):
 
 # ================================================ #
 
-tools = [DuckDuckGoSearchRun(max_results=1)]
+tools = [GetCurrentWeatherTool()]
 prompt = ChatPromptTemplate.from_messages([("human", "{input}")])
 
 model = ChatOpenAI(
@@ -122,6 +121,6 @@ model = ChatOpenAI(
 
 runnable = prompt | model
 
-response = runnable.invoke({"input": "what is the weather today in Austin?"})
+response = runnable.invoke({"input": "what is the weather today in Boston?"})
 
 print(response)

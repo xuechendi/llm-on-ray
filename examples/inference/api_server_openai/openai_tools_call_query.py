@@ -50,25 +50,6 @@ elif openai_api_key == "not_needed":
 else:
     openai_base_url = "https://api.openai.com/v1"
 
-# ================================================ #
-# Lets define a function/tool for getting the weather. In this demo it we mockthe output
-# In real life, you'd end up calling a library/API such as PWOWM (open weather map) library:
-# Depending on your app's functionality, you may also, call vendor/external or internal custom APIs
-
-
-def get_current_weather(location, unit):
-    # Call an external API to get relevant information (like serpapi, etc)
-    # Here for the demo we will send a mock response
-    weather_info = {
-        "location": location,
-        "temperature": "78",
-        "unit": unit,
-        "forecast": ["sunny", "with a chance of meatballs"],
-    }
-    return weather_info
-
-
-# ================================================ #
 
 client = OpenAI(base_url=openai_base_url, api_key=openai_api_key)
 
@@ -97,7 +78,7 @@ messages = [
     {"role": "user", "content": "What's the weather like in Boston today?"},
 ]
 
-completion = client.chat.completions.create(
+chat_completion = client.chat.completions.create(
     model=args.model_name,
     messages=messages,
     max_tokens=args.max_new_tokens,
@@ -106,17 +87,4 @@ completion = client.chat.completions.create(
     stream=args.streaming_response,
 )
 
-if args.streaming_response:
-    for chunk in completion:
-        content = chunk.choices[0].delta.content
-        if content is not None:
-            print(content, end="", flush=True)
-else:
-    try:
-        content = completion.choices[0].message.content
-        if content is not None:
-            print(content, end="", flush=True)
-    except Exception:
-        print(content)
-
-print("")
+print(repr(chat_completion.choices[0].message.model_dump()))

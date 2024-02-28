@@ -125,4 +125,4 @@ llm = ChatOpenAI(
 )
 agent = create_openai_tools_agent(tools=tools, llm=llm, prompt=prompt)
 agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
-agent_executor.invoke({"input": "what is the weather today in Austin?"})
+agent_executor.invoke({"input": "what is the weather today in Boston?"})
