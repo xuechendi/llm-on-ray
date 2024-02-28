@@ -26,9 +26,10 @@ from transformers import TextIteratorStreamer
 from inference.inference_config import InferenceConfig
 from typing import Union, Dict, Any
 from starlette.responses import StreamingResponse, JSONResponse
-from fastapi import HTTPException
 from inference.api_openai_backend.openai_protocol import ModelResponse
 from inference.utils import get_prompt_format, PromptFormat
+from inference.api_openai_backend.tool_call_handler import ToolCallHandler
+import json
 
 
 @serve.deployment
@@ -151,30 +152,85 @@ class PredictorDeployment:
                 self.consume_streamer_async(streamer), status_code=200, media_type="text/plain"
             )
 
-    async def openai_call(self, prompt, config, streaming_response=True):
+    async def openai_call(
+        self, prompt, config, streaming_response=True, tools=None, tool_choice="auto"
+    ):
         prompts = []
         images = []
-        if isinstance(prompt, list):
-            prompt_format = get_prompt_format(prompt)
-            if prompt_format == PromptFormat.CHAT_FORMAT:
-                if self.process_tool is not None:
-                    if self.is_mllm:
-                        prompt, image = self.process_tool.get_prompt(prompt)
-                        prompts.append(prompt)
-                        images.extend(image)
-                    else:
-                        prompt = self.process_tool.get_prompt(prompt)
-                        prompts.append(prompt)
-                else:
-                    prompts.extend(prompt)
-            elif prompt_format == PromptFormat.PROMPTS_FORMAT:
-                yield HTTPException(
-                    400, "Mulitple prompts are not supported when using openai compatible api."
-                )
-            else:
-                yield HTTPException(400, "Invalid prompt format.")
+        tool_calls = None
+        # if tools is not None:
+        #     from inference.api_openai_backend.openai_protocol import ToolCall
+        #     ret = {'id': 'call_9d80dcfa3c3a412baf38124db692f1de',
+        #         'function': {'arguments': '{"location": "Boston", "unit": "fahrenheit"}', 'name': 'get_current_weather'},
+        #         'type': 'function'
+        #         }
+        #     tool_calls = [ToolCall(**ret)]
+        # if isinstance(prompt, list):
+        #     prompt_format = get_prompt_format(prompt)
+        #     if prompt_format == PromptFormat.CHAT_FORMAT:
+        #         if self.process_tool is not None:
+        #             if self.is_mllm:
+        #                 prompt, image = self.process_tool.get_prompt(prompt)
+        #                 prompts.append(prompt)
+        #                 images.extend(image)
+        #             else:
+        #                 prompt = self.process_tool.get_prompt(prompt)
+        #                 prompts.append(prompt)
+        #         else:
+        #             prompts.extend(prompt)
+        #     elif prompt_format == PromptFormat.PROMPTS_FORMAT:
+        #         yield HTTPException(
+        #             400, "Mulitple prompts are not supported when using openai compatible api."
+        #         )
+        #     else:
+        #         yield HTTPException(400, "Invalid prompt format.")
+        # else:
+        #     prompts.append(prompt)
+
+        # Case 1: No tool choice by user
+        if (
+            tool_choice is None
+            or (isinstance(tool_choice, str) and tool_choice == "none")
+            or tools is None
+            or len(tools) == 0
+        ):
+            tools = []
+
+        # Case 2: Tool choice by user
+        elif isinstance(tool_choice, dict):
+            tool_name = tool_choice["function"]["name"]
+            tool = next((tool for tool in tools if tool["function"]["name"] == tool_name), None)
+            tools = [tool]
+
+        # Case 3: Automatic tool choice
         else:
-            prompts.append(prompt)
+            pass
+
+        msg_id = -1
+        for idx, message in enumerate(prompt):
+            print(message.role)
+            if message.role == "user":
+                question = message.content
+                msg_id = idx
+        content = "Answer the following Question as best you can."
+        content += "\n\nYou have access to the following functions:\n"
+        for tool in tools:
+            content += f"\nfunctions.{ tool.function.name }:"
+            content += f"\n{json.dumps(tool.function.parameters)}"
+            content += f"\nfunction description: {tool.function.description}\n"
+        content += "\n\nYou can respond to users messages with either a single message or one or more function calls."
+        content += "\n\nTo respond with a message begin the message with 'message:', use the following format:"
+        content += "\n\nmessage:"
+        content += "\n<message>"
+        content += "\n\nTo respond with one or more function calls begin the message with 'functions.<function_name>:', use the following format:"
+        content += "\n\nfunctions.<function_name>:"
+        content += '\n{ "arg1": "value1", "arg2": "value2" }'
+        content += "\nfunctions.<function_name>:"
+        content += '\n{ "arg1": "value1", "arg2": "value2" }'
+        content += f"\n\nBegin!\n\nQuestion: {question}"
+        prompt[msg_id].content = content
+        prompts = self.predictor.tokenizer.apply_chat_template(prompt, tokenize=False)
+        tool_calls = ToolCallHandler()
 
         if not streaming_response:
             if self.use_vllm:
@@ -186,12 +242,14 @@ class PredictorDeployment:
             else:
                 generate_result = self.predictor.generate(prompts, **config)
                 generate_text = generate_result.text[0]
+
             model_response = ModelResponse(
                 generated_text=generate_text,
                 num_input_tokens=generate_result.input_length,
                 num_input_tokens_batch=generate_result.input_length,
                 num_generated_tokens=generate_result.generate_length,
                 preprocessing_time=0,
+                tool_calls=tool_calls,
             )
             yield model_response
         else:
@@ -233,5 +291,6 @@ class PredictorDeployment:
                     num_input_tokens_batch=input_length,
                     num_generated_tokens=1,
                     preprocessing_time=0,
+                    tool_calls=tool_calls,
                 )
                 yield model_response
