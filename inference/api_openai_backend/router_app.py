@@ -189,7 +189,10 @@ async def _chat_completions_wrapper(
                     finish_reason = subresult_dict["finish_reason"]
                     choices = [
                         DeltaChoices(
-                            delta=DeltaContent(content=subresult_dict["generated_text"] or ""),
+                            delta=DeltaContent(
+                                content=subresult_dict["generated_text"] or "",
+                                tool_calls=subresult_dict["tool_calls"] or None,
+                            ),
                             index=0,
                             finish_reason=None,
                         )
@@ -225,6 +228,7 @@ async def _chat_completions_wrapper(
                 usage=usage,
             ).json() + "\n\n"
         yield "data: [DONE]\n\n"
+
 
 class Router:
     def __init__(
@@ -328,7 +332,15 @@ class Router:
         Returns:
             A response object with completions.
         """
-        prompt = Prompt(prompt=body.messages, parameters=dict(body))
+        tools = body.tools
+        tool_choice = body.tool_choice
+        # Doing this to remove them from sampling params
+        body.tools = None
+        body.tool_choice = None
+
+        prompt = Prompt(
+            prompt=body.messages, parameters=dict(body), tools=tools, tool_choice=tool_choice
+        )
         request_id = f"chatcmpl-{str(uuid.uuid4().hex)}"
 
         if body.stream:
@@ -355,24 +367,41 @@ class Router:
                         )
                     results = results.dict()
 
-                    choices: List[ChatCompletionResponseChoice] = [
-                        ChatCompletionResponseChoice(
-                            index=0,
-                            message=ChatMessage(
-                                role="assistant", content=results["generated_text"] or ""
-                            ),
-                            finish_reason=results["finish_reason"],
-                        )
-                    ]
-                    usage = UsageInfo.from_response(results)
+                    if results.tool_calls:
+                        msg = ChatMessage(role="assistant", tool_calls=results["tool_calls"])
+                        # deleting this fields so that they don't appear in the response
+                        del msg.tool_call_id
+                        usage = UsageInfo.from_response(results)
 
-                    return ChatCompletionResponse(
-                        id=request_id,
-                        object="chat.completion",
-                        model=body.model,
-                        choices=choices,
-                        usage=usage,
-                    )
+                        return ChatCompletionResponse(
+                            id=request_id,
+                            object="chat.completion",
+                            model=body.model,
+                            choices=[
+                                ChatCompletionResponseChoice(
+                                    message=msg, index=0, finish_reason=results["finish_reason"]
+                                )
+                            ],
+                            usage=usage,
+                        )
+                    else:
+                        usage = UsageInfo.from_response(results)
+
+                        return ChatCompletionResponse(
+                            id=request_id,
+                            object="chat.completion",
+                            model=body.model,
+                            choices=[
+                                ChatCompletionResponseChoice(
+                                    index=0,
+                                    message=ChatMessage(
+                                        role="assistant", content=results["generated_text"] or ""
+                                    ),
+                                    finish_reason=results["finish_reason"],
+                                )
+                            ],
+                            usage=usage,
+                        )
 
     @router_app.get("/v1/health_check")
     async def health_check(self) -> bool:

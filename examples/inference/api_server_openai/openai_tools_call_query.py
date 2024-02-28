@@ -55,10 +55,6 @@ else:
 # In real life, you'd end up calling a library/API such as PWOWM (open weather map) library:
 # Depending on your app's functionality, you may also, call vendor/external or internal custom APIs
 
-from pydantic import BaseModel, Field
-from typing import Optional, Type
-from langchain.tools import BaseTool
-
 
 def get_current_weather(location, unit):
     # Call an external API to get relevant information (like serpapi, etc)
@@ -70,29 +66,6 @@ def get_current_weather(location, unit):
         "forecast": ["sunny", "with a chance of meatballs"],
     }
     return weather_info
-
-
-class GetCurrentWeatherCheckInput(BaseModel):
-    # Check the input for Weather
-    location: str = Field(
-        ..., description="The name of the location name for which we need to find the weather"
-    )
-    unit: str = Field(..., description="The unit for the temperature value")
-
-
-class GetCurrentWeatherTool(BaseTool):
-    name = "get_current_weather"
-    description = "Used to find the weather for a given location in said unit"
-
-    def _run(self, location: str, unit: str):
-        # print("I am running!")
-        weather_response = get_current_weather(location, unit)
-        return weather_response
-
-    def _arun(self, location: str, unit: str):
-        raise NotImplementedError("This tool does not support async")
-
-    args_schema: Optional[Type[BaseModel]] = GetCurrentWeatherCheckInput
 
 
 # ================================================ #
